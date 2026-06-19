@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>La Casa Di Pão — Sistema de Qualidade</title>
-<!-- jsPDF removido - usando impressão nativa -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -992,6 +992,7 @@ function atualizarResumoFotos(){
 // GERAR LAUDO PDF
 // ══════════════════════════════════════════════════
 window.gerarLaudoPDF=function(){
+  if(!window.jspdf||!window.jspdf.jsPDF){alert('Aguarde o carregamento do sistema e tente novamente.');return;}
   var produto=document.getElementById('prd-produto').value;
   var dataFab=document.getElementById('prd-data').value;
   var turno=document.getElementById('prd-turno').value;
@@ -1001,102 +1002,435 @@ window.gerarLaudoPDF=function(){
   if(!dataFab){alert('Informe a data de fabricacao.');return;}
   if(lotes.length===0){alert('Adicione ao menos um lote.');return;}
 
-  var nomeProd=PRODUTOS_NOMES[produto]||produto;
-  var dataFmt=dataFab.split('-').reverse().join('/');
+  var jsPDF=window.jspdf.jsPDF;
+  var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  var W=210,ML=14,MR=14,CW=W-ML-MR;
+  var y=14;
+  var azul=[27,58,107],azulL=[232,238,247],verde=[26,122,58],verdeL=[232,245,236];
+  var amarelo=[243,156,18],amareloL=[254,249,231];
+  var cinzaL=[245,245,245],branco=[255,255,255],cinza=[102,102,102];
 
-  // Monta HTML do laudo para impressão
-  var linhasMassas='';
+  function addPage(){doc.addPage();y=14;}
+  function checkY(n){if(y+n>283)addPage();}
+
+  // HEADER
+  doc.setFillColor.apply(doc,azul); doc.rect(0,0,W,22,'F');
+  try{doc.addImage('data:image/png;base64,'+LOGO,'PNG',ML,2,18,18);}catch(e){}
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(255,255,255);
+  doc.text('LAUDO DE QUALIDADE — RASTREABILIDADE POR MASSA',ML+22,9);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(200,210,230);
+  doc.text('Panificadora e Confeitaria La Casa Di Pão Ltda.  |  CNPJ: 68.812.312/0001-33  |  (41) 99961-4714',ML+22,15);
+  doc.text('Rev. 00',W-MR,15,{align:'right'});
+  y=28;
+
+  // IDENTIFICAÇÃO
+  var nomeProd=PRODUTOS_NOMES[produto]||produto;
+  doc.setFillColor.apply(doc,azul); doc.rect(ML,y,CW,8,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(255,255,255);
+  doc.text(nomeProd.toUpperCase()+' — LAUDO DE QUALIDADE',ML+3,y+5.5);
+  y+=10;
+  var campos=[
+    ['Produto',nomeProd],['Código / SKU',produto],
+    ['Data de Fabricação',dataFab.split('-').reverse().join('/')],
+    ['Turno',turno],['Responsável',resp],
+    ['Lotes incluídos',lotes.slice(0,4).join(', ')+(lotes.length>4?' ... ('+lotes.length+' total)':'')],
+    ['Total de massas',lotes.length+' massas'],
+    ['Endereço','Rua Rev. José Ferreira Filho, 110 - Novo Mundo, Curitiba PR - CEP 81050-422'],
+  ];
+  campos.forEach(function(row,i){
+    doc.setFillColor.apply(doc,i%2===0?cinzaL:branco);
+    doc.rect(ML,y,CW,7,'F'); doc.rect(ML,y,CW,7,'S');
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(50,50,50);
+    doc.text(row[0]+':',ML+2,y+4.8);
+    doc.setFont('helvetica','normal'); doc.setTextColor(0,0,0);
+    doc.text(String(row[1]),ML+55,y+4.8);
+    y+=7;
+  });
+  y+=6;
+
+  // LEGENDA
+  checkY(18);
+  doc.setFillColor.apply(doc,azulL); doc.rect(ML,y,CW,16,'F'); doc.rect(ML,y,CW,16,'S');
+  doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor.apply(doc,azul);
+  doc.text('Criterios de Avaliacao de Qualidade',ML+3,y+5);
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor.apply(doc,cinza);
+  doc.text('Notas de 0 a 100 (multiplos de 5)  |  Total maximo: 300 pts  |  Aprovado: >= 201 pts',ML+3,y+9.5);
+  doc.text('Volume: desenvolvimento da massa  |  Crocancia: textura da casca  |  Pestana: abertura lateral',ML+3,y+13.5);
+  y+=20;
+
+  // MASSAS
   lotes.forEach(function(lote,idx){
     var d=massasData[lote]||{};
-    var v=d.v||0,c=d.c||0,p=d.p||0,t=v+c+p;
+    var v=d.v||0,c=d.c||0,p=d.p||0,total=v+c+p;
     var temNotas=v>0||c>0||p>0;
-    var corHdr=d.desvio?'#F39C12':'#1B3A6B';
-    var statusHtml=d.desvio&&d.obs
-      ?'<div style="background:#FEF9E7;color:#F39C12;border:1px solid #F39C12;padding:6px;text-align:center;font-weight:700;font-size:12px">DESVIO: '+d.obs+'</div>'
-      :'<div style="background:#E8F5EC;color:#1A7A3A;border:1px solid #1A7A3A;padding:6px;text-align:center;font-weight:700;font-size:12px">APROVADO</div>';
-    linhasMassas+='<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
-      +'<div style="background:'+corHdr+';color:#fff;padding:8px 12px;font-weight:700;font-size:13px;display:flex;justify-content:space-between">'
-      +'<span>'+lote+'</span><span>Massa '+(idx+1)+'/'+lotes.length+'</span></div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;padding:8px;gap:4px">'
-      +'<div style="text-align:center"><div style="font-size:10px;color:#666">Volume</div><div style="font-size:20px;font-weight:700;color:#1B3A6B">'+(temNotas?v:'—')+'</div></div>'
-      +'<div style="text-align:center"><div style="font-size:10px;color:#666">Crocância</div><div style="font-size:20px;font-weight:700;color:#1B3A6B">'+(temNotas?c:'—')+'</div></div>'
-      +'<div style="text-align:center"><div style="font-size:10px;color:#666">Pestana</div><div style="font-size:20px;font-weight:700;color:#1B3A6B">'+(temNotas?p:'—')+'</div></div>'
-      +'<div style="text-align:center;background:#E8EEF7;border-radius:4px"><div style="font-size:10px;color:#1B3A6B">Total</div><div style="font-size:20px;font-weight:700;color:#1B3A6B">'+(temNotas?t+' pts':'—')+'</div></div>'
-      +'</div>'+statusHtml+'</div>';
+    var temDesvio=d.desvio&&d.obs&&d.obs.trim();
+    var hBloco=temDesvio?44:32;
+    checkY(hBloco+4);
+    // Header
+    doc.setFillColor.apply(doc,temDesvio?amarelo:azul);
+    doc.rect(ML,y,CW,8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255);
+    doc.text(lote,ML+3,y+5.5);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.text('Massa '+(idx+1)+'/'+lotes.length,W-MR,y+5.5,{align:'right'});
+    y+=8;
+    // Notas
+    var bodyY=y;
+    doc.setFillColor(255,255,255); doc.rect(ML,y,CW,22,'F'); doc.rect(ML,y,CW,22,'S');
+    var colW=CW/4;
+    var qcL=['Volume','Crocancia','Pestana','Total'];
+    var qcV=[temNotas?String(v):'—',temNotas?String(c):'—',temNotas?String(p):'—',temNotas?String(total)+' pts':'—'];
+    qcL.forEach(function(lb,i){
+      var cx=ML+i*colW,isT=i===3;
+      if(isT){doc.setFillColor.apply(doc,azulL);doc.rect(cx,bodyY,colW,22,'F');}
+      doc.setFont('helvetica','bold'); doc.setFontSize(8);
+      doc.setTextColor.apply(doc,isT?azul:cinza);
+      doc.text(lb,cx+colW/2,bodyY+6,{align:'center'});
+      doc.setFont('helvetica','bold'); doc.setFontSize(isT?13:12);
+      doc.setTextColor.apply(doc,isT?azul:[0,0,0]);
+      doc.text(qcV[i],cx+colW/2,bodyY+16,{align:'center'});
+    });
+    y+=22;
+    // Status
+    if(temDesvio){
+      doc.setFillColor.apply(doc,amareloL); doc.rect(ML,y,CW,8,'F'); doc.rect(ML,y,CW,8,'S');
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor.apply(doc,amarelo);
+      doc.text('DESVIO: '+d.obs,ML+3,y+5.2,{maxWidth:CW-6});
+      y+=10;
+    } else {
+      doc.setFillColor.apply(doc,verdeL); doc.rect(ML,y,CW,8,'F'); doc.rect(ML,y,CW,8,'S');
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor.apply(doc,verde);
+      doc.text('APROVADO',W/2,y+5.2,{align:'center'});
+      y+=10;
+    }
   });
+  y+=6;
 
-  // Fotos
-  var linhasFotos='';
+  // FOTOS
   var fids=Object.keys(fotosData);
   if(fids.length>0){
-    linhasFotos='<div style="background:#1B3A6B;color:#fff;padding:8px 12px;font-weight:700;font-size:13px;margin:12px 0 8px;border-radius:4px">REGISTRO FOTOGRAFICO DAS FORNADAS</div>';
+    checkY(14);
+    doc.setFillColor.apply(doc,azul); doc.rect(ML,y,CW,8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255);
+    doc.text('REGISTRO FOTOGRAFICO DAS FORNADAS',ML+3,y+5.5);
+    y+=12;
     fids.forEach(function(fid,fi){
       var fd=fotosData[fid];
-      var lotesStr=fd.lotesSel&&fd.lotesSel.length>0?fd.lotesSel.join(' / '):'Sem massas selecionadas';
-      linhasFotos+='<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
-        +'<div style="background:#E8EEF7;padding:6px 12px;font-size:12px;color:#1B3A6B"><strong>Foto '+(fi+1)+'</strong> — '+lotesStr+'</div>';
-      if(fd.base64){
-        linhasFotos+='<img src="'+fd.base64+'" style="width:100%;max-height:200px;object-fit:cover">';
+      checkY(20);
+      doc.setFillColor.apply(doc,azulL); doc.rect(ML,y,CW,7,'F'); doc.rect(ML,y,CW,7,'S');
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor.apply(doc,azul);
+      doc.text('Foto '+(fi+1),ML+3,y+4.8);
+      if(fd.lotesSel&&fd.lotesSel.length>0){
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor.apply(doc,cinza);
+        doc.text(fd.lotesSel.join(' / '),ML+22,y+4.8,{maxWidth:CW-26});
       }
-      linhasFotos+='</div>';
+      y+=7;
+      if(fd.base64){
+        try{
+          var tmpImg=new Image(); tmpImg.src=fd.base64;
+          var iw=tmpImg.naturalWidth||800,ih=tmpImg.naturalHeight||600;
+          var fh=Math.min(60,CW*(ih/iw));
+          checkY(fh+4);
+          doc.addImage(fd.base64,'JPEG',ML,y,CW,fh,'','FAST');
+          doc.setDrawColor.apply(doc,azul); doc.rect(ML,y,CW,fh,'S');
+          y+=fh+4;
+        }catch(e){y+=4;}
+      } else {
+        doc.setFillColor(240,244,248); doc.rect(ML,y,CW,12,'F'); doc.rect(ML,y,CW,12,'S');
+        doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor.apply(doc,cinza);
+        doc.text('[Foto nao inserida]',W/2,y+7,{align:'center'});
+        y+=14;
+      }
     });
+    y+=6;
   }
 
+  // COMPOSIÇÃO
+  checkY(30);
+  doc.setFillColor.apply(doc,azul); doc.rect(ML,y,CW,8,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255);
+  doc.text('COMPOSICAO',ML+3,y+5.5); y+=10;
   var compTxt=COMPOSICOES[produto]||COMP_DEFAULT;
+  doc.setFillColor(255,255,255); doc.rect(ML,y,CW,22,'F'); doc.rect(ML,y,CW,22,'S');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+  doc.text(doc.splitTextToSize(compTxt,CW-4),ML+2,y+5); y+=24;
+
+  // MODO DE PREPARO
+  checkY(26);
+  doc.setFillColor.apply(doc,azul); doc.rect(ML,y,CW,8,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255);
+  doc.text('MODO DE PREPARO',ML+3,y+5.5); y+=10;
   var prepTxt=MODOS[produto]||MODO_DEFAULT;
+  doc.setFillColor.apply(doc,azulL); doc.rect(ML,y,CW,18,'F'); doc.rect(ML,y,CW,18,'S');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+  doc.text(doc.splitTextToSize(prepTxt,CW-4),ML+2,y+5); y+=20;
 
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
-    +'<title>Laudo '+nomeProd+' '+dataFmt+'</title>'
-    +'<style>body{font-family:Arial,sans-serif;font-size:13px;margin:0;padding:16px;color:#222}'
-    +'h1{font-size:16px;color:#1B3A6B}table{width:100%;border-collapse:collapse}'
-    +'td{padding:5px 8px;border:1px solid #ddd;font-size:12px}'
-    +'.hdr{background:#1B3A6B;color:#fff;padding:8px 12px;font-weight:700;margin:10px 0 4px;border-radius:4px}'
-    +'@media print{.no-print{display:none}}</style></head><body>'
-    +'<div style="display:flex;align-items:center;gap:12px;background:#1B3A6B;color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:12px">'
-    +'<div><div style="font-size:15px;font-weight:700">LAUDO DE QUALIDADE — RASTREABILIDADE POR MASSA</div>'
-    +'<div style="font-size:11px;opacity:.8">Panificadora e Confeitaria La Casa Di Pão Ltda. | CNPJ: 68.812.312/0001-33 | (41) 99961-4714</div></div></div>'
-    +'<div style="background:#1B3A6B;color:#fff;padding:8px 12px;font-weight:700;font-size:14px;border-radius:4px;margin-bottom:8px">'+nomeProd.toUpperCase()+' — LAUDO DE QUALIDADE</div>'
-    +'<table style="margin-bottom:10px">'
-    +'<tr><td style="background:#f5f5f5;font-weight:700;width:40%">Produto</td><td>'+nomeProd+'</td></tr>'
-    +'<tr><td style="font-weight:700">Código / SKU</td><td>'+produto+'</td></tr>'
-    +'<tr><td style="background:#f5f5f5;font-weight:700">Data de Fabricação</td><td>'+dataFmt+'</td></tr>'
-    +'<tr><td style="font-weight:700">Turno</td><td>'+turno+'</td></tr>'
-    +'<tr><td style="background:#f5f5f5;font-weight:700">Responsável</td><td>'+resp+'</td></tr>'
-    +'<tr><td style="font-weight:700">Total de massas</td><td>'+lotes.length+' massas</td></tr>'
-    +'<tr><td style="background:#f5f5f5;font-weight:700">Endereço</td><td>Rua Rev. José Ferreira Filho, 110 - Novo Mundo, Curitiba PR</td></tr>'
-    +'</table>'
-    +'<div style="background:#E8EEF7;border:1px solid #1B3A6B;padding:8px;font-size:11px;margin-bottom:10px;border-radius:4px">'
-    +'<strong style="color:#1B3A6B">Critérios:</strong> Notas de 0 a 100 | Total máximo: 300 pts | Aprovado: >= 201 pts<br>'
-    +'Volume: desenvolvimento da massa | Crocância: textura da casca | Pestana: abertura lateral</div>'
-    +linhasMassas
-    +linhasFotos
-    +'<div class="hdr">COMPOSIÇÃO</div>'
-    +'<div style="border:1px solid #ddd;padding:8px;font-size:12px;margin-bottom:8px">'+compTxt+'</div>'
-    +'<div class="hdr">MODO DE PREPARO</div>'
-    +'<div style="background:#E8EEF7;border:1px solid #1B3A6B;padding:8px;font-size:12px;margin-bottom:10px">'+prepTxt+'</div>'
-    +'<div style="background:#f5f5f5;border:1px solid #ddd;padding:8px;font-size:11px;margin-bottom:16px">'
-    +'Declaramos que as massas identificadas neste laudo foram produzidas e avaliadas conforme os padrões internos de qualidade da La Casa Di Pão, em conformidade com as Boas Práticas de Fabricação (RDC 275/2002 e RDC 216/2004). Todos os lotes listados foram aprovados para expedição.</div>'
-    +'<div style="text-align:center;padding:20px 0">'
-    +'<div style="display:inline-block;border-top:1px solid #333;width:200px;padding-top:6px;font-size:12px">Responsável: '+resp+'</div></div>'
-    +'<div style="text-align:center;font-size:11px;color:#666">Curitiba – PR, ____/____/________</div>'
-    +'<div style="margin-top:16px;background:#1B3A6B;color:#ccc;padding:6px 12px;font-size:10px;display:flex;justify-content:space-between;border-radius:4px">'
-    +'<span>Rua Rev. José Ferreira Filho, 110 – Novo Mundo – Curitiba/PR | INDÚSTRIA BRASILEIRA</span></div>'
-    +'<div class="no-print" style="position:fixed;bottom:0;left:0;right:0;background:#1B3A6B;padding:12px;display:flex;gap:10px;justify-content:center">'
-    +'<button onclick="window.print()" style="background:#fff;color:#1B3A6B;border:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">🖨️ Salvar / Imprimir PDF</button>'
-    +'<button onclick="compartilharWpp()" style="background:#25D366;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">📲 WhatsApp</button>'
-    +'<button onclick="window.close()" style="background:#666;color:#fff;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer">Fechar</button>'
-    +'</div>'
-    +'<script>function compartilharWpp(){'
-    +'var txt=encodeURIComponent("*Laudo de Qualidade — La Casa Di Pao*\n\nProduto: '+nomeProd+'\nFabricacao: '+dataFmt+'\nResponsavel: '+resp+'\nMassas: '+lotes.length+'\n\nTodos os lotes aprovados.\n\n(Salve o PDF e envie em seguida)");'
-    +'window.open("https://wa.me/?text="+txt,"_blank");'
-    +'setTimeout(function(){window.print();},1500);}'
-    +'<\/script>'
-    +'</body></html>';
+  // DECLARAÇÃO
+  checkY(18);
+  doc.setFillColor.apply(doc,cinzaL); doc.rect(ML,y,CW,14,'F'); doc.rect(ML,y,CW,14,'S');
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(50,50,50);
+  doc.text(doc.splitTextToSize('Declaramos que as massas identificadas neste laudo foram produzidas e avaliadas conforme os padroes internos de qualidade da La Casa Di Pao, em conformidade com as Boas Praticas de Fabricacao (RDC 275/2002 e RDC 216/2004). Todos os lotes listados foram aprovados para expedicao.',CW-4),ML+2,y+4.5);
+  y+=18;
 
-  // Abrir em nova aba
-  var win=window.open('','_blank');
-  if(!win){alert('Permita pop-ups para este site e tente novamente.');return;}
-  win.document.write(html);
-  win.document.close();
+  // ASSINATURA
+  checkY(22);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor.apply(doc,cinza);
+  doc.line(ML+CW/2-40,y+14,ML+CW/2+40,y+14);
+  doc.text('Responsavel pela Emissao: '+resp,W/2,y+19,{align:'center'});
+  doc.text('Curitiba - PR, ____/____/________',W/2,y+25,{align:'center'});
+
+  // RODAPÉ
+  var totalPages=doc.getNumberOfPages();
+  for(var i=1;i<=totalPages;i++){
+    doc.setPage(i);
+    doc.setFillColor.apply(doc,azul); doc.rect(0,288,W,9,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(200,210,230);
+    doc.text('Rua Rev. Jose Ferreira Filho, 110 - Novo Mundo - Curitiba/PR - CEP 81050-422  |  INDUSTRIA BRASILEIRA',ML,293.5);
+    doc.text('Pagina '+i+' de '+totalPages,W-MR,293.5,{align:'right'});
+  }
+
+  pdfBlob=doc.output('blob');
+  var nomeArq='Laudo_'+produto+'_'+dataFab+'.pdf';
+  configurarModalPDF(nomeArq, nomeProd, dataFab, resp, lotes.length);
+  document.getElementById('modalPDF').classList.add('open');
 };
+
+function configurarModalPDF(nome, prod, data, resp, qtd){
+  document.getElementById('btnDl').onclick=function(){
+    var url=URL.createObjectURL(pdfBlob);
+    var a=document.createElement('a'); a.href=url; a.download=nome; a.click();
+    URL.revokeObjectURL(url);
+  };
+  document.getElementById('btnWpp').onclick=function(){
+    var txt=encodeURIComponent('*Laudo de Qualidade — La Casa Di Pao*\n\nProduto: '+prod+'\nFabricacao: '+data.split('-').reverse().join('/')+'\nResponsavel: '+resp+'\nMassas: '+qtd+'\n\nTodos os lotes aprovados para expedicao.\n\n_(Salve o PDF e envie em seguida)_');
+    window.open('https://wa.me/?text='+txt,'_blank');
+    setTimeout(function(){
+      var url=URL.createObjectURL(pdfBlob);
+      var a=document.createElement('a'); a.href=url; a.download=nome; a.click();
+      URL.revokeObjectURL(url);
+    },1500);
+  };
+}
+
+// ══════════════════════════════════════════════════
+// EXPEDIÇÃO
+// ══════════════════════════════════════════════════
+var expProdCount=0;
+
+function carregarClientesSelect(selId){
+  var sel=document.getElementById(selId); if(!sel) return;
+  sel.innerHTML='<option value="">— Selecione o cliente —</option>';
+  CLIENTES.forEach(function(c){
+    var opt=document.createElement('option'); opt.value=c.id; opt.textContent=c.nome; sel.appendChild(opt);
+  });
+}
+
+window.adicionarProdutoExp=function(){
+  expProdCount++;
+  var id='ep'+expProdCount;
+  var div=document.createElement('div'); div.className='produto-linha'; div.id=id;
+  div.innerHTML='<select style="flex:1;padding:6px 8px;font-size:13px"><option value="">Produto</option>'
+    +Object.entries(PRODUTOS_NOMES).map(function(e){return '<option value="'+e[0]+'">'+e[1]+'</option>';}).join('')+'</select>'
+    +'<input type="text" placeholder="Lotes ex: 001-010" style="width:120px;padding:6px 8px;font-size:12px">'
+    +'<input type="number" placeholder="Qtd" style="width:60px;padding:6px 8px;font-size:13px">'
+    +'<button type="button" onclick="document.getElementById(\''+id+'\').remove()" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer">×</button>';
+  document.getElementById('exp-produtos').appendChild(div);
+};
+
+window.gerarLaudoCliente=function(){
+  var clienteId=document.getElementById('exp-cliente').value;
+  var cliente=CLIENTES.find(function(c){return c.id===clienteId;});
+  if(!cliente){alert('Selecione o cliente.');return;}
+  alert('Laudo do cliente gerado! (Em desenvolvimento completo)');
+};
+
+// ══════════════════════════════════════════════════
+// ENTREGA
+// ══════════════════════════════════════════════════
+var entProdCount=0;
+
+window.adicionarProdutoEnt=function(){
+  entProdCount++;
+  var id='entp'+entProdCount;
+  var div=document.createElement('div'); div.className='produto-linha'; div.id=id;
+  div.innerHTML='<select style="flex:1;padding:6px 8px;font-size:13px"><option value="">Produto</option>'
+    +Object.entries(PRODUTOS_NOMES).map(function(e){return '<option value="'+e[0]+'">'+e[1]+'</option>';}).join('')+'</select>'
+    +'<input type="text" placeholder="Lotes" style="width:100px;padding:6px 8px;font-size:12px">'
+    +'<input type="number" placeholder="Qtd" style="width:55px;padding:6px 8px;font-size:13px">'
+    +'<button type="button" onclick="document.getElementById(\''+id+'\').remove()" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer">×</button>';
+  document.getElementById('ent-produtos').appendChild(div);
+};
+
+window.enviarRelatorioEntrega=function(){
+  var clienteId=document.getElementById('ent-cliente').value;
+  var cliente=CLIENTES.find(function(c){return c.id===clienteId;});
+  if(!cliente){alert('Selecione o cliente.');return;}
+  var motorista=sessao.usuario?sessao.usuario.nome:'—';
+  var agora=new Date();
+  var hora=String(agora.getHours()).padStart(2,'0')+':'+String(agora.getMinutes()).padStart(2,'0');
+  var data=String(agora.getDate()).padStart(2,'0')+'/'+(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
+  var linhas=['*Relatorio de Entrega — La Casa Di Pao*','','Cliente: '+cliente.nome,'Data: '+data,'Horario: '+hora,'Motorista: '+motorista,''];
+  document.querySelectorAll('.produto-linha').forEach(function(pl){
+    var sels=pl.querySelectorAll('select,input');
+    if(sels.length>=3&&sels[0].value){
+      linhas.push('Produto: '+(PRODUTOS_NOMES[sels[0].value]||sels[0].value));
+      if(sels[1].value) linhas.push('Lotes: '+sels[1].value);
+      if(sels[2].value) linhas.push('Qtd: '+sels[2].value+' pacotes');
+      linhas.push('');
+    }
+  });
+  var obs=document.getElementById('ent-obs').value;
+  if(obs.trim()) linhas.push('Obs: '+obs);
+  linhas.push('La Casa Di Pao — (41) 99961-4714');
+  var txt=encodeURIComponent(linhas.join('\n'));
+  window.open('https://wa.me/?text='+txt,'_blank');
+};
+
+// ══════════════════════════════════════════════════
+// ADM
+// ══════════════════════════════════════════════════
+function admTab(tab){
+  document.querySelectorAll('#admTabs .tab').forEach(function(t,i){
+    var tabs=['usuarios','clientes','relatorios'];
+    t.classList.toggle('ativo',tabs[i]===tab);
+  });
+  ['admUsuarios','admClientes','admRelatorios'].forEach(function(id){
+    document.getElementById(id).classList.toggle('hidden',!id.toLowerCase().includes(tab));
+  });
+}
+
+function renderizarAdm(){
+  renderizarUsuarios();
+  renderizarClientes();
+}
+
+function renderizarUsuarios(){
+  var cont=document.getElementById('listaUsuarios'); cont.innerHTML='';
+  var perfisLabel={producao:'Producao',expedicao:'Expedicao',entrega:'Entrega',adm:'ADM'};
+  USUARIOS.forEach(function(u,idx){
+    var div=document.createElement('div'); div.className='user-item';
+    div.innerHTML='<div class="ui-info"><h4>'+u.nome+'</h4><p>Senha: '+u.senha+'</p></div>'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +'<span class="badge-perfil">'+perfisLabel[u.perfil]+'</span>'
+      +'<button class="btn btn-sm btn-outline" type="button" onclick="editarUsuario('+idx+')">Editar</button>'
+      +'</div>';
+    cont.appendChild(div);
+  });
+}
+
+function renderizarClientes(){
+  var cont=document.getElementById('listaClientes'); cont.innerHTML='';
+  CLIENTES.forEach(function(c,idx){
+    var div=document.createElement('div'); div.className='user-item';
+    div.innerHTML='<div class="ui-info"><h4>'+c.nome+'</h4><p>Rota: '+c.rota+'</p></div>'
+      +'<div style="display:flex;gap:8px">'
+      +'<button class="btn btn-sm btn-outline" type="button" onclick="editarCliente('+idx+')">Editar</button>'
+      +'<button class="btn btn-sm btn-red" type="button" onclick="excluirCliente('+idx+')">×</button>'
+      +'</div>';
+    cont.appendChild(div);
+  });
+}
+
+var editandoUsuarioIdx=-1;
+window.abrirModalNovoUsuario=function(){
+  editandoUsuarioIdx=-1;
+  document.getElementById('modalUsuarioTitulo').textContent='Novo usuario';
+  document.getElementById('u-nome').value='';
+  document.getElementById('u-perfil').value='producao';
+  document.getElementById('u-senha').value='';
+  document.getElementById('modalUsuario').classList.add('open');
+};
+
+window.editarUsuario=function(idx){
+  editandoUsuarioIdx=idx;
+  var u=USUARIOS[idx];
+  document.getElementById('modalUsuarioTitulo').textContent='Editar usuario';
+  document.getElementById('u-nome').value=u.nome;
+  document.getElementById('u-perfil').value=u.perfil;
+  document.getElementById('u-senha').value=u.senha;
+  document.getElementById('modalUsuario').classList.add('open');
+};
+
+window.salvarUsuario=function(){
+  var nome=document.getElementById('u-nome').value.trim();
+  var perfil=document.getElementById('u-perfil').value;
+  var senha=document.getElementById('u-senha').value.trim();
+  if(!nome||senha.length!==4){alert('Preencha nome e senha com 4 digitos.');return;}
+  if(editandoUsuarioIdx>=0){
+    USUARIOS[editandoUsuarioIdx].nome=nome;
+    USUARIOS[editandoUsuarioIdx].perfil=perfil;
+    USUARIOS[editandoUsuarioIdx].senha=senha;
+  } else {
+    USUARIOS.push({id:'u'+Date.now(),nome:nome,perfil:perfil,senha:senha});
+  }
+  renderizarUsuarios();
+  fecharModal('modalUsuario');
+};
+
+var editandoClienteIdx=-1;
+window.abrirModalNovoCliente=function(){
+  editandoClienteIdx=-1;
+  document.getElementById('modalClienteTitulo').textContent='Novo cliente';
+  document.getElementById('c-nome').value='';
+  document.getElementById('c-rota').value='dedicada';
+  document.getElementById('modalCliente').classList.add('open');
+};
+
+window.editarCliente=function(idx){
+  editandoClienteIdx=idx;
+  var c=CLIENTES[idx];
+  document.getElementById('modalClienteTitulo').textContent='Editar cliente';
+  document.getElementById('c-nome').value=c.nome;
+  document.getElementById('c-rota').value=c.rota;
+  document.getElementById('modalCliente').classList.add('open');
+};
+
+window.salvarCliente=function(){
+  var nome=document.getElementById('c-nome').value.trim();
+  var rota=document.getElementById('c-rota').value;
+  if(!nome){alert('Informe o nome do cliente.');return;}
+  if(editandoClienteIdx>=0){
+    CLIENTES[editandoClienteIdx].nome=nome;
+    CLIENTES[editandoClienteIdx].rota=rota;
+  } else {
+    CLIENTES.push({id:'c'+Date.now(),nome:nome,rota:rota});
+  }
+  renderizarClientes();
+  carregarClientesSelect('exp-cliente');
+  carregarClientesSelect('ent-cliente');
+  fecharModal('modalCliente');
+};
+
+window.excluirCliente=function(idx){
+  if(!confirm('Excluir este cliente?')) return;
+  CLIENTES.splice(idx,1);
+  renderizarClientes();
+  carregarClientesSelect('exp-cliente');
+  carregarClientesSelect('ent-cliente');
+};
+
+// ══════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════
+window.fecharModal=function(id){document.getElementById(id).classList.remove('open');};
+
+// Event listeners
+document.addEventListener('DOMContentLoaded',function(){
+  document.getElementById('prd-data').value=new Date().toISOString().split('T')[0];
+
+  document.getElementById('btnAddLote').addEventListener('click',function(e){e.preventDefault();window.adicionarLote();});
+  document.getElementById('btnAddLote').addEventListener('touchend',function(e){e.preventDefault();window.adicionarLote();},{passive:false});
+
+  document.getElementById('btnAddFoto').addEventListener('click',function(e){e.preventDefault();window.adicionarFoto();});
+  document.getElementById('btnAddFoto').addEventListener('touchend',function(e){e.preventDefault();window.adicionarFoto();},{passive:false});
+
+  document.getElementById('btnAddProduto').addEventListener('click',function(e){e.preventDefault();window.adicionarProdutoExp();});
+  document.getElementById('btnAddProduto').addEventListener('touchend',function(e){e.preventDefault();window.adicionarProdutoExp();},{passive:false});
+
+  document.getElementById('btnAddEntProduto').addEventListener('click',function(e){e.preventDefault();window.adicionarProdutoEnt();});
+  document.getElementById('btnAddEntProduto').addEventListener('touchend',function(e){e.preventDefault();window.adicionarProdutoEnt();},{passive:false});
+});
+</script>
+</body>
+</html>
 
