@@ -361,9 +361,7 @@ textarea{resize:none;font-family:var(--font)}
       </div>
     </div>
 
-    <button class="btn btn-primary btn-block btn-fixed" type="button" onclick="gerarLaudoPDF()">
-      📄 Gerar Laudo PDF
-    </button>
+    <div style="height:70px"></div>
   </div>
 
   <!-- MÓDULO EXPEDIÇÃO -->
@@ -383,11 +381,7 @@ textarea{resize:none;font-family:var(--font)}
         Adicionar produto
       </button>
     </div>
-    <div style="padding:0 12px 80px">
-      <button class="btn btn-green btn-block" type="button" onclick="gerarLaudoCliente()">
-        📄 Gerar Laudo do Cliente
-      </button>
-    </div>
+    <div style="height:70px"></div>
   </div>
 
   <!-- MÓDULO ENTREGA -->
@@ -407,11 +401,7 @@ textarea{resize:none;font-family:var(--font)}
       <label style="margin-top:16px">Observações</label>
       <textarea id="ent-obs" rows="3" placeholder="Opcional..."></textarea>
     </div>
-    <div style="padding:0 12px 80px">
-      <button class="btn btn-green btn-block" type="button" onclick="enviarRelatorioEntrega()">
-        📲 Enviar relatório no WhatsApp
-      </button>
-    </div>
+    <div style="height:70px"></div>
   </div>
 
   <!-- MÓDULO ADM -->
@@ -519,6 +509,9 @@ textarea{resize:none;font-family:var(--font)}
     </div>
   </div>
 </div>
+
+<!-- BOTÃO FLUTUANTE DINÂMICO -->
+<div id="floatBtn" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:200"></div>
 
 <script>
 // ══════════════════════════════════════════════════
@@ -681,6 +674,21 @@ function iniciarSessao(u){
   if(u.perfil==='adm') renderizarAdm();
   if(u.perfil==='expedicao') carregarClientesSelect('exp-cliente');
   if(u.perfil==='entrega') carregarClientesSelect('ent-cliente');
+
+  // Botão flutuante por perfil
+  var fb = document.getElementById('floatBtn');
+  if(u.perfil==='producao'){
+    fb.style.display='block';
+    fb.innerHTML='<button type="button" onclick="gerarLaudoPDF()" style="width:100%;padding:16px;background:#1B3A6B;color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">📄 Gerar Laudo PDF</button>';
+  } else if(u.perfil==='expedicao'){
+    fb.style.display='block';
+    fb.innerHTML='<button type="button" onclick="gerarLaudoCliente()" style="width:100%;padding:16px;background:#1A7A3A;color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">📄 Gerar Laudo do Cliente</button>';
+  } else if(u.perfil==='entrega'){
+    fb.style.display='block';
+    fb.innerHTML='<button type="button" onclick="enviarRelatorioEntrega()" style="width:100%;padding:16px;background:#1A7A3A;color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">📲 Enviar relatório no WhatsApp</button>';
+  } else {
+    fb.style.display='none';
+  }
 
   // Init data
   document.getElementById('prd-data').value=new Date().toISOString().split('T')[0];
@@ -984,13 +992,14 @@ function atualizarResumoFotos(){
 // GERAR LAUDO PDF
 // ══════════════════════════════════════════════════
 window.gerarLaudoPDF=function(){
+  if(!window.jspdf||!window.jspdf.jsPDF){alert('Aguarde o carregamento do sistema e tente novamente.');return;}
   var produto=document.getElementById('prd-produto').value;
   var dataFab=document.getElementById('prd-data').value;
   var turno=document.getElementById('prd-turno').value;
   var resp=sessao.usuario?sessao.usuario.nome:'—';
   var lotes=getLotes();
   if(!produto){alert('Selecione o produto.');return;}
-  if(!dataFab){alert('Informe a data de fabricação.');return;}
+  if(!dataFab){alert('Informe a data de fabricacao.');return;}
   if(lotes.length===0){alert('Adicione ao menos um lote.');return;}
 
   var jsPDF=window.jspdf.jsPDF;
